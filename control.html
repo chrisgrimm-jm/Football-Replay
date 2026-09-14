@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Football Replay Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Barlow', sans-serif; }
+html, body {
+  background: #0a0d14;
+  color: #c8d0da;
+  font-family: 'Barlow', sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+}
+.panel { max-width: 560px; margin: 0 auto; padding: 28px 20px 60px; }
+h1 {
+  font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: rgba(255,255,255,0.35); margin-bottom: 22px;
+}
+.section {
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px; padding: 16px; margin-bottom: 12px;
+}
+.section-title {
+  font-size: 10px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase;
+  color: rgba(255,255,255,0.28); margin-bottom: 13px;
+}
+.row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.row:last-child { margin-bottom: 0; }
+label {
+  font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.35);
+  text-transform: uppercase; letter-spacing: .07em; min-width: 56px; flex-shrink: 0;
+}
+select, input[type="text"], input[type="date"] {
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px; color: #e0e6ee; font-size: 13px; font-family: 'Barlow', sans-serif;
+  padding: 7px 10px; flex: 1; outline: none; transition: border-color .15s; cursor: pointer;
+}
+select:focus, input:focus { border-color: rgba(255,255,255,0.25); }
+option { background: #0e1420; }
+
+.toggle-btn {
+  font-size: 10px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; padding: 4px 10px;
+  border-radius: 3px; border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.38);
+  cursor: pointer; transition: all .15s;
+}
+.toggle-btn:hover { background: rgba(255,255,255,0.09); color: #fff; }
+.toggle-btn.hidden-state { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.28); color: rgba(239,68,68,0.65); }
+
+.obs-url-box {
+  background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.06); border-radius: 4px;
+  padding: 9px 12px; margin-top: 10px; display: flex; align-items: center; gap: 10px;
+}
+.obs-url-text { flex: 1; font-size: 11px; font-family: monospace; color: rgba(255,255,255,0.3); word-break: break-all; }
+.copy-btn {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  padding: 5px 11px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.38); cursor: pointer; transition: all .15s;
+}
+.copy-btn:hover { background: rgba(255,255,255,0.09); color: #fff; }
+.copy-btn.copied { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.28); color: #22c55e; }
+
+.hint { font-size: 11px; color: rgba(255,255,255,0.22); line-height: 1.5; margin-top: 8px; margin-bottom: 2px; }
+
+.section-header { display: flex; align-items: center; justify-content: space-between; }
+.collapse-btn {
+  font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.3);
+  cursor: pointer; transition: all .15s;
+}
+.collapse-btn:hover { background: rgba(255,255,255,0.09); color: #fff; }
+.collapsible { overflow: hidden; transition: max-height .25s ease, opacity .25s ease; max-height: 400px; opacity: 1; }
+.collapsible.collapsed { max-height: 0; opacity: 0; }
+.push-status {
+  font-size: 11px; color: rgba(255,255,255,0.22); text-align: center; margin-top: 16px; transition: color .2s;
+}
+.push-status.ok { color: rgba(34,197,94,0.55); }
+.push-status.err { color: rgba(239,68,68,0.55); }
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1>🏈 Football Replay Control</h1>
+
+  <!-- Unique ID + OBS URL -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">Connection</div>
+      <button class="collapse-btn" id="conn-toggle" onclick="toggleConnection()">Hide</button>
+    </div>
+    <div class="collapsible" id="conn-body">
+      <div class="row">
+        <label>Unique ID</label>
+        <input type="text" id="topic-input" placeholder="e.g. jomboy-replay-x7k2" autocomplete="off" spellcheck="false">
+      </div>
+      <p class="hint">Create any ID you want — this is how the control page talks to OBS. Make it unique so it doesn't conflict with anyone else's replay.</p>
+      <div class="obs-url-box">
+        <span class="obs-url-text" id="obs-url-text">Enter a Unique ID above to generate your OBS URL</span>
+        <button class="copy-btn" id="copy-btn" onclick="copyUrl()">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Replay -->
+  <div class="section">
+    <div class="section-title">Pick a Game</div>
+    <div class="row">
+      <label>Date</label>
+      <input type="date" id="replay-date">
+      <button class="toggle-btn" onclick="loadReplayGames()">Load Games</button>
+    </div>
+    <div class="row">
+      <select id="replay-game-sel"><option value="">— Pick a date and load —</option></select>
+    </div>
+  </div>
+
+  <!-- Play controls -->
+  <div class="section" id="replay-section" style="display:none">
+    <div class="section-title">Play-by-Play</div>
+    <div class="row">
+      <button class="toggle-btn" onclick="replayStep(-1)">◀ Prev</button>
+      <button class="toggle-btn" id="replay-play-btn" onclick="toggleReplayAutoplay()">▶ Play</button>
+      <button class="toggle-btn" onclick="replayStep(1)">Next ▶</button>
+    </div>
+    <p class="hint" id="replay-status"></p>
+  </div>
+
+  <div class="push-status" id="push-status">—</div>
+</div>
+
+<script>
+const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
+
+firebase.initializeApp({
+  apiKey: 'AIzaSyBG2PS2muH4i27HefuLeBnZWW-TZ5dkMCw',
+  databaseURL: 'https://pinpoint-abf21-default-rtdb.firebaseio.com'
+});
+const _db = firebase.database();
+const fbKey = t => t.trim().replace(/[.#$\[\]\/\s]+/g, '-');
+const fbRef = topic => _db.ref(`football-replay/${fbKey(topic)}/state`);
+
+const topicInput = document.getElementById('topic-input');
+const saved = JSON.parse(localStorage.getItem('football-replay-ctrl') || '{}');
+topicInput.value = saved.topic || '';
+if (saved.connCollapsed) {
+  document.getElementById('conn-body').classList.add('collapsed');
+  document.getElementById('conn-toggle').textContent = 'Show';
+}
+updateObsUrl();
+document.getElementById('replay-date').valueAsDate = new Date();
+
+topicInput.addEventListener('input', () => {
+  const clean = topicInput.value.replace(/\s+/g, '-');
+  if (clean !== topicInput.value) topicInput.value = clean;
+  updateObsUrl(); saveSettings();
+});
+
+function updateObsUrl() {
+  const topic = topicInput.value.trim();
+  const urlEl = document.getElementById('obs-url-text');
+  if (!topic) { urlEl.textContent = 'Enter a Unique ID above to generate your OBS URL'; return; }
+  const base = location.origin + location.pathname.replace('control.html', 'display.html');
+  urlEl.textContent = `${base}?topic=${encodeURIComponent(topic)}&obs=1`;
+}
+
+function copyUrl() {
+  const text = document.getElementById('obs-url-text').textContent;
+  if (!text.startsWith('http')) return;
+  navigator.clipboard.writeText(text);
+  const btn = document.getElementById('copy-btn');
+  btn.textContent = 'Copied!'; btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+}
+
+function toggleConnection() {
+  const body = document.getElementById('conn-body');
+  const btn  = document.getElementById('conn-toggle');
+  const collapsed = body.classList.toggle('collapsed');
+  btn.textContent = collapsed ? 'Show' : 'Hide';
+  saveSettings();
+}
+
+function saveSettings() {
+  localStorage.setItem('football-replay-ctrl', JSON.stringify({
+    topic: topicInput.value.trim(),
+    connCollapsed: document.getElementById('conn-body').classList.contains('collapsed')
+  }));
+}
+
+async function pushConfig() {
+  const topic = topicInput.value.trim();
+  if (!topic) return;
+  const statusEl = document.getElementById('push-status');
+  try {
+    await fbRef(topic).set({ replay: replayEvent });
+    statusEl.textContent = `Config pushed · ${new Date().toLocaleTimeString()}`;
+    statusEl.className = 'push-status ok';
+  } catch(e) {
+    statusEl.textContent = `Push failed: ${e.message}`;
+    statusEl.className = 'push-status err';
+  }
+}
+
+async function apiFetch(url) { const r = await fetch(url); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }
+
+// ── Pick a game ──
+let replayGames = [];
+async function loadReplayGames() {
+  const dateStr = document.getElementById('replay-date').value.replace(/-/g, '');
+  if (!dateStr) return;
+  const sel = document.getElementById('replay-game-sel');
+  sel.innerHTML = '<option value="">Loading…</option>';
+  try {
+    const data = await apiFetch(`${ESPN}/scoreboard?dates=${dateStr}`);
+    replayGames = data.events || [];
+    sel.innerHTML = '<option value="">— Pick a game —</option>';
+    replayGames.forEach(g => {
+      const comp = g.competitions[0];
+      const away = comp.competitors.find(c => c.homeAway === 'away');
+      const home = comp.competitors.find(c => c.homeAway === 'home');
+      const opt = document.createElement('option');
+      opt.value = g.id;
+      opt.textContent = `${away?.team?.abbreviation||'?'} @ ${home?.team?.abbreviation||'?'} — ${comp.status?.type?.description||''}`;
+      sel.appendChild(opt);
+    });
+    if (!replayGames.length) sel.innerHTML = '<option value="">No games that day</option>';
+  } catch(e) {
+    sel.innerHTML = `<option value="">Failed: ${e.message}</option>`;
+  }
+}
+document.getElementById('replay-game-sel').addEventListener('change', onReplayGameChange);
+
+// ── Play-by-play ──
+let replayPlays = [];
+let replayIdx = 0;
+let replayAway = null, replayHome = null;
+let replayEvent = null;
+let replayAutoTimer = null;
+
+async function onReplayGameChange() {
+  const id = document.getElementById('replay-game-sel').value;
+  if (!id) return;
+  const statusEl = document.getElementById('replay-status');
+  statusEl.textContent = 'Loading plays…';
+  try {
+    const data = await apiFetch(`${ESPN}/summary?event=${id}`);
+    const competitors = data.header.competitions[0].competitors;
+    const attachLogo = t => ({ ...t, logoHref: (t.logos||[]).find(l=>l.rel?.includes('default'))?.href || t.logos?.[0]?.href });
+    replayAway = attachLogo(competitors.find(c => c.homeAway === 'away').team);
+    replayHome = attachLogo(competitors.find(c => c.homeAway === 'home').team);
+    const drives = data.drives?.previous || [];
+    replayPlays = drives.flatMap(d => d.plays || []);
+    if (!replayPlays.length) { statusEl.textContent = 'No play-by-play available for this game.'; return; }
+    replayIdx = 0;
+    document.getElementById('replay-section').style.display = 'block';
+    pushReplayFrame();
+  } catch(e) {
+    statusEl.textContent = `Failed to load plays: ${e.message}`;
+  }
+}
+
+// ESPN's play-by-play measures yardLine as distance-to-opponent's-goal;
+// the field renderer expects distance from the POSSESSING team's own
+// goal (0-100), hence the 100-minus flip below.
+function buildSyntheticEvent(play) {
+  const e = play.end || play.start || {};
+  const down = e.down;
+  const possId = e.team?.id;
+  const situation = (down >= 1 && possId) ? {
+    down,
+    distance: e.distance,
+    yardLine: 100 - (e.yardsToEndzone ?? e.yardLine ?? 50),
+    shortDownDistanceText: e.shortDownDistanceText || '',
+    possession: possId,
+    lastPlay: { text: play.text || '' }
+  } : { lastPlay: { text: play.text || '' } };
+  return {
+    competitions: [{
+      status: { type: { name: 'STATUS_IN_PROGRESS' }, period: play.period?.number || 1, displayClock: play.clock?.displayValue || '' },
+      competitors: [
+        { homeAway: 'away', team: replayAway, score: String(play.awayScore ?? 0) },
+        { homeAway: 'home', team: replayHome, score: String(play.homeScore ?? 0) }
+      ],
+      situation
+    }]
+  };
+}
+
+function pushReplayFrame() {
+  replayEvent = buildSyntheticEvent(replayPlays[replayIdx]);
+  const p = replayPlays[replayIdx];
+  document.getElementById('replay-status').textContent =
+    `Play ${replayIdx+1} of ${replayPlays.length} — Q${p.period?.number||'?'} ${p.clock?.displayValue||''} — ${p.text||''}`;
+  pushConfig();
+}
+
+function replayStep(delta) {
+  if (!replayPlays.length) return;
+  replayIdx = Math.max(0, Math.min(replayPlays.length-1, replayIdx + delta));
+  pushReplayFrame();
+}
+
+function toggleReplayAutoplay() {
+  const btn = document.getElementById('replay-play-btn');
+  if (replayAutoTimer) {
+    clearInterval(replayAutoTimer);
+    replayAutoTimer = null;
+    btn.textContent = '▶ Play';
+  } else {
+    btn.textContent = '⏸ Pause';
+    replayAutoTimer = setInterval(() => {
+      if (replayIdx >= replayPlays.length-1) { toggleReplayAutoplay(); return; }
+      replayStep(1);
+    }, 2500);
+  }
+}
+</script>
+</body>
+</html>

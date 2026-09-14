@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Football Replay — Display</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=Barlow:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<style>
+html,body{margin:0;padding:0;background:transparent;width:100%;height:100%;overflow:hidden;}
+*{box-sizing:border-box;}
+
+.stage{position:fixed;bottom:40px;left:0;right:0;display:flex;align-items:center;justify-content:center;font-family:'Barlow',sans-serif;font-weight:700;}
+
+.field-wrap{display:flex;flex-direction:column;align-items:center;gap:8px;opacity:0;transform:translateY(10px);transition:opacity .4s ease,transform .4s ease;}
+.field-wrap.show{opacity:1;transform:translateY(0);}
+
+.field-hud{position:relative;z-index:2;background:#0d0d0d;color:#fff;border-radius:5px;padding:5px 16px;display:flex;align-items:center;gap:10px;white-space:nowrap;box-shadow:0 3px 8px rgba(0,0,0,.5);}
+.field-quarter{font-size:16px;font-weight:900;}
+.field-clock{font-size:15px;font-weight:700;color:rgba(255,255,255,.75);}
+.field-down{font-size:13px;font-weight:800;color:#ffd60a;text-transform:uppercase;}
+
+.field-bar{display:flex;align-items:stretch;height:96px;width:760px;border-radius:6px;filter:drop-shadow(0 4px 14px rgba(0,0,0,.7));position:relative;}
+
+.endzone{width:74px;flex-shrink:0;display:flex;align-items:center;justify-content:center;position:relative;transition:box-shadow .25s;}
+.endzone.away{border-radius:6px 0 0 6px;}
+.endzone.home{border-radius:0 6px 6px 0;}
+.endzone.offense{box-shadow:inset 0 0 0 3px rgba(255,214,10,.9);}
+.ez-logo-badge{width:50px;height:50px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.35);}
+.ez-logo{width:36px;height:36px;object-fit:contain;}
+.ez-score{position:absolute;top:-15px;left:50%;transform:translateX(-50%);background:#fff;color:#000;font-size:24px;font-weight:900;border-radius:13px;padding:1px 11px;box-shadow:0 2px 6px rgba(0,0,0,.4);transition:color .25s;}
+.ez-score.flash{animation:scoreFlash .7s ease forwards;}
+@keyframes scoreFlash{0%{transform:translateX(-50%) scale(1.4);color:#e05000;}60%{transform:translateX(-50%) scale(1.1);color:#e05000;}100%{transform:translateX(-50%) scale(1);color:#000;}}
+
+.turf{flex:1;position:relative;overflow:hidden;
+  background:repeating-linear-gradient(90deg,#2f7d34 0,#2f7d34 10%,#296e2c 10%,#296e2c 20%);}
+.yard-tick{position:absolute;top:6px;bottom:6px;width:2px;background:rgba(255,255,255,.55);z-index:0;}
+.yard-num{position:absolute;bottom:5px;transform:translateX(-50%);font-size:10px;font-weight:900;color:rgba(255,255,255,.6);z-index:0;}
+.turf-logo{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);height:78px;width:78px;object-fit:contain;opacity:.92;pointer-events:none;z-index:1;}
+.first-down-line{position:absolute;top:0;bottom:0;width:3px;background:#ffd60a;opacity:0;transition:left .5s ease,opacity .2s;box-shadow:0 0 4px rgba(255,214,10,.8);z-index:2;}
+.first-down-line.on{opacity:.95;}
+.ball{position:absolute;top:50%;transform:translate(-50%,-50%);font-size:18px;opacity:0;transition:left .5s ease,opacity .2s;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6));z-index:3;}
+.ball.on{opacity:1;}
+
+.field-stack{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;}
+.play-bar{
+  position:absolute;bottom:100%;left:50%;
+  transform:translateX(-50%) translateY(100%);
+  opacity:0;z-index:0;
+  transition:transform .45s cubic-bezier(.2,.8,.2,1),opacity .3s ease;
+  background:#fff;border-radius:4px;padding:6px 16px;max-width:700px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;color:#000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  box-shadow:0 6px 14px rgba(0,0,0,.5);
+}
+.play-bar.show{transform:translateX(-50%) translateY(-8px);opacity:1;}
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="field-wrap" id="field-wrap">
+    <div class="field-stack">
+      <div class="play-bar" id="play-bar"></div>
+      <div class="field-hud">
+        <span class="field-quarter" id="field-quarter">—</span>
+        <span class="field-clock" id="field-clock"></span>
+        <span class="field-down" id="field-down"></span>
+      </div>
+      <div class="field-bar" id="field-bar">
+        <div class="endzone away" id="ez-away">
+          <div class="ez-score" id="ez-away-score">0</div>
+          <div class="ez-logo-badge"><img class="ez-logo" id="ez-away-logo" alt=""></div>
+        </div>
+        <div class="turf" id="turf">
+          <img class="turf-logo" src="assets/jmf-logo.png" alt="">
+          <div class="first-down-line" id="fd-line"></div>
+          <div class="ball" id="ball">🏈</div>
+        </div>
+        <div class="endzone home" id="ez-home">
+          <div class="ez-score" id="ez-home-score">0</div>
+          <div class="ez-logo-badge"><img class="ez-logo" id="ez-home-logo" alt=""></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const topic = new URLSearchParams(location.search).get('topic') || '';
+
+function teamBg(t){ return '#' + (t.color || '1e2530'); }
+function teamText(t){
+  const hex = t.color || '1e2530';
+  const r=parseInt(hex.slice(0,2),16), g=parseInt(hex.slice(2,4),16), b=parseInt(hex.slice(4,6),16);
+  return (0.299*r+0.587*g+0.114*b) > 140 ? '#000' : '#fff';
+}
+function quarterLabel(period, statusName){
+  if(statusName==='STATUS_HALFTIME') return 'HT';
+  if(period<=4) return 'Q'+period;
+  if(period===5) return 'OT';
+  return (period-4)+'OT';
+}
+function flashEl(el){ el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+
+// ── Static turf markings (yard ticks + mirrored numbers), built once ──
+(function buildTurf(){
+  const turf = document.getElementById('turf');
+  for(let pct=10; pct<=90; pct+=10){
+    const tick = document.createElement('div');
+    tick.className = 'yard-tick';
+    tick.style.left = pct + '%';
+    turf.appendChild(tick);
+    const num = document.createElement('div');
+    num.className = 'yard-num';
+    num.style.left = pct + '%';
+    num.textContent = pct<=50 ? pct : 100-pct;
+    turf.appendChild(num);
+  }
+})();
+
+const mainBug = { prev:{}, lastPlayText:'' };
+let playPopTimer = null;
+function triggerPlayPopup(text){
+  const bar = document.getElementById('play-bar');
+  bar.textContent = text;
+  bar.classList.add('show');
+  clearTimeout(playPopTimer);
+  playPopTimer = setTimeout(()=>bar.classList.remove('show'), 8000);
+}
+
+function renderFrame(event){
+  const comp = event.competitions[0];
+  const away = comp.competitors.find(c=>c.homeAway==='away');
+  const home = comp.competitors.find(c=>c.homeAway==='home');
+  const status = comp.status || {};
+  const sit = comp.situation || {};
+  const statusName = status.type?.name || '';
+
+  document.getElementById('ez-away').style.background = teamBg(away.team);
+  document.getElementById('ez-home').style.background = teamBg(home.team);
+  const awayLogo = document.getElementById('ez-away-logo');
+  const homeLogo = document.getElementById('ez-home-logo');
+  if(away.team.logoHref) awayLogo.src = away.team.logoHref;
+  if(home.team.logoHref) homeLogo.src = home.team.logoHref;
+
+  const awayScore = parseInt(away.score||'0',10), homeScore = parseInt(home.score||'0',10);
+  const awayEl = document.getElementById('ez-away-score');
+  const homeEl = document.getElementById('ez-home-score');
+  if(mainBug.prev.away !== undefined && awayScore > mainBug.prev.away) flashEl(awayEl);
+  if(mainBug.prev.home !== undefined && homeScore > mainBug.prev.home) flashEl(homeEl);
+  awayEl.textContent = awayScore;
+  homeEl.textContent = homeScore;
+  mainBug.prev = { away: awayScore, home: homeScore };
+
+  document.getElementById('field-quarter').textContent = quarterLabel(status.period||1, statusName);
+  document.getElementById('field-clock').textContent = status.displayClock || '';
+
+  const downEl = document.getElementById('field-down');
+  const ball = document.getElementById('ball');
+  const fdLine = document.getElementById('fd-line');
+  const ezAway = document.getElementById('ez-away');
+  const ezHome = document.getElementById('ez-home');
+
+  const possIsAway = sit.possession === away.team.id;
+  const possIsHome = sit.possession === home.team.id;
+  const hasSit = sit.yardLine != null && sit.down && (possIsAway || possIsHome);
+  if(hasSit){
+    downEl.textContent = (sit.shortDownDistanceText||'').toUpperCase();
+    const ballYards = sit.yardLine;
+    const fdYards = Math.min(sit.yardLine + (sit.distance||0), 100);
+    const toPct = y => possIsAway ? y : 100 - y;
+    ball.style.left = toPct(ballYards) + '%';
+    fdLine.style.left = toPct(fdYards) + '%';
+    ball.classList.add('on');
+    fdLine.classList.add('on');
+    ezAway.classList.toggle('offense', possIsAway);
+    ezHome.classList.toggle('offense', !possIsAway);
+  } else {
+    downEl.textContent = '';
+    ball.classList.remove('on');
+    fdLine.classList.remove('on');
+    ezAway.classList.remove('offense');
+    ezHome.classList.remove('offense');
+  }
+
+  const playTxt = (sit.lastPlay?.text || '').trim();
+  if(playTxt && playTxt !== mainBug.lastPlayText){
+    mainBug.lastPlayText = playTxt;
+    triggerPlayPopup(playTxt);
+  }
+
+  document.getElementById('field-wrap').classList.add('show');
+}
+
+function applyConfig(cfg){
+  if(cfg.replay) renderFrame(cfg.replay);
+}
+
+// ── Firebase config transport ──
+firebase.initializeApp({
+  apiKey: 'AIzaSyBG2PS2muH4i27HefuLeBnZWW-TZ5dkMCw',
+  databaseURL: 'https://pinpoint-abf21-default-rtdb.firebaseio.com'
+});
+const _db = firebase.database();
+const fbKey = t => t.trim().replace(/[.#$\[\]\/\s]+/g, '-');
+
+if(topic){
+  _db.ref(`football-replay/${fbKey(topic)}/state`).on('value', snap => {
+    const cfg = snap.val();
+    if(!cfg) return;
+    applyConfig(cfg);
+  });
+}
+</script>
+</body>
+</html>
