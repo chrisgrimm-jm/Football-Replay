@@ -148,8 +148,21 @@ option { background: #0e1420; }
       <button class="toggle-btn" onclick="replayStep(-1)">◀ Prev</button>
       <button class="toggle-btn" id="replay-play-btn" onclick="toggleReplayAutoplay()">▶ Play</button>
       <button class="toggle-btn" onclick="replayStep(1)">Next ▶</button>
-      <span class="hint" id="replay-status" style="margin:0"></span>
+      <label style="min-width:0">Every</label>
+      <select id="autoplay-interval">
+        <option value="1000">1s</option>
+        <option value="1500">1.5s</option>
+        <option value="2000">2s</option>
+        <option value="2500" selected>2.5s</option>
+        <option value="3000">3s</option>
+        <option value="4000">4s</option>
+        <option value="5000">5s</option>
+      </select>
     </div>
+    <div class="row">
+      <input type="text" id="play-search" placeholder="Search plays — a name, &quot;pass&quot;, &quot;sack&quot;, a team...">
+    </div>
+    <p class="hint" id="replay-status"></p>
     <div class="play-list" id="replay-play-list"></div>
   </div>
 
@@ -281,6 +294,7 @@ async function onReplayGameChange() {
     if (!replayPlays.length) { statusEl.textContent = 'No play-by-play available for this game.'; return; }
     replayIdx = 0;
     document.getElementById('replay-section').style.display = 'block';
+    document.getElementById('play-search').value = '';
     buildPlayList();
     pushReplayFrame();
   } catch(e) {
@@ -304,6 +318,14 @@ function buildPlayList() {
 function selectPlay(idx) {
   replayIdx = idx;
   pushReplayFrame();
+}
+
+document.getElementById('play-search').addEventListener('input', filterPlayList);
+function filterPlayList() {
+  const q = document.getElementById('play-search').value.trim().toLowerCase();
+  document.querySelectorAll('.play-item').forEach(el => {
+    el.style.display = (!q || el.textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
 }
 
 function updatePlayListActive() {
@@ -354,6 +376,17 @@ function replayStep(delta) {
   pushReplayFrame();
 }
 
+let autoplayMs = 2500;
+document.getElementById('autoplay-interval').addEventListener('change', e => {
+  autoplayMs = parseInt(e.target.value);
+  if (replayAutoTimer) { clearInterval(replayAutoTimer); replayAutoTimer = setInterval(autoplayTick, autoplayMs); }
+});
+
+function autoplayTick() {
+  if (replayIdx >= replayPlays.length-1) { toggleReplayAutoplay(); return; }
+  replayStep(1);
+}
+
 function toggleReplayAutoplay() {
   const btn = document.getElementById('replay-play-btn');
   if (replayAutoTimer) {
@@ -362,10 +395,7 @@ function toggleReplayAutoplay() {
     btn.textContent = '▶ Play';
   } else {
     btn.textContent = '⏸ Pause';
-    replayAutoTimer = setInterval(() => {
-      if (replayIdx >= replayPlays.length-1) { toggleReplayAutoplay(); return; }
-      replayStep(1);
-    }, 2500);
+    replayAutoTimer = setInterval(autoplayTick, autoplayMs);
   }
 }
 </script>
